@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./logo.png" width="160" alt="MegaMock Logo">
+</p>
+
 # KrepkoJS
 
 Contract-driven HTTP testing library for executable flows.
