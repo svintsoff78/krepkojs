@@ -19,7 +19,7 @@ KrepkoJS is not a unit testing framework. It's not classic E2E. It's a **contrac
 ## Installation
 
 ```bash
-npm install krepko
+npm install @svintsoff78/krepkojs
 ```
 
 ## Quick Start
@@ -27,7 +27,7 @@ npm install krepko
 Create a file `auth.krepko.ts`:
 
 ```typescript
-import { krepko, expect } from 'krepko';
+import { krepko, expect } from '@svintsoff78/krepkojs';
 
 krepko('https://api.example.com')
     .flow('User Authentication')
