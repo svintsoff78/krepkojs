@@ -167,7 +167,7 @@ res.expectStatus(200)
 res.expectStatus(201)
 ```
 
-### `expectBody(partial)`
+### `expectBody(partial, options?)`
 
 Partial matching - only checks specified fields:
 
@@ -175,12 +175,71 @@ Partial matching - only checks specified fields:
 res.expectBody({ id: 1, status: 'active' })
 ```
 
+#### Nested Objects
+
+Validate deeply nested structures with partial matching at every level:
+
+```typescript
+res.expectBody({
+  user: {
+    profile: {
+      name: expect.string,
+      settings: {
+        theme: 'dark',
+        notifications: expect.boolean
+      }
+    }
+  }
+})
+```
+
+#### Arrays with Objects
+
+Validate array elements against a pattern:
+
+```typescript
+// Check first element structure
+res.expectBody({
+  users: [{ id: expect.number, name: expect.string }]
+})
+
+// Check all elements match pattern
+res.expectBody({
+  users: expect.arrayOf({ id: expect.number, name: expect.string })
+})
+```
+
+#### Nested Arrays
+
+Validate arrays within arrays:
+
+```typescript
+res.expectBody({
+  matrix: [[1, 2], [3, 4]],
+  nested: expect.arrayOf(expect.array)
+})
+```
+
+#### Depth Limit
+
+Control validation depth with the `depth` option:
+
+```typescript
+// Only validate first 2 levels
+res.expectBody({
+  user: {
+    profile: { name: expect.string }  // validated
+    // deeper levels skipped
+  }
+}, { depth: 2 })
+```
+
 ### Matchers
 
 Use matchers for flexible assertions:
 
 ```typescript
-import { expect } from 'krepko';
+import { expect } from '@svintsoff78/krepkojs';
 
 res.expectBody({
   token: expect.any,        // Field exists (any value)
@@ -191,6 +250,37 @@ res.expectBody({
   meta: expect.object,      // Is an object
   role: 'admin',            // Exact value
 })
+```
+
+#### Array Matchers
+
+```typescript
+// All items must match pattern
+res.expectBody({
+  users: expect.arrayOf({ id: expect.number })
+})
+
+// Array contains specific items (order doesn't matter)
+res.expectBody({
+  tags: expect.arrayContaining([
+    { name: 'featured' },
+    { name: 'new' }
+  ])
+})
+
+// Nested: array of arrays of numbers
+res.expectBody({
+  matrix: expect.arrayOf(expect.arrayOf(expect.number))
+})
+```
+
+### Error Messages
+
+Errors include full path to the mismatched field:
+
+```
+Body mismatch at "user.profile.settings.theme": expected "dark", received "light"
+Body mismatch at "items[2].price": expected expect.number, received "free"
 ```
 
 ## CLI
@@ -287,7 +377,7 @@ flows/
 KrepkoJS is written in TypeScript and provides full type definitions.
 
 ```typescript
-import { krepko, expect, Context, KrepkoResponse } from 'krepko';
+import { krepko, expect, Context, KrepkoResponse } from '@svintsoff78/krepkojs';
 ```
 
 ## Requirements

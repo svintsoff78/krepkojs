@@ -5,6 +5,23 @@ const EXPECT_BOOLEAN = Symbol('expect.boolean');
 const EXPECT_ARRAY = Symbol('expect.array');
 const EXPECT_OBJECT = Symbol('expect.object');
 
+const EXPECT_ARRAY_OF = Symbol('expect.arrayOf');
+const EXPECT_ARRAY_CONTAINING = Symbol('expect.arrayContaining');
+
+interface ArrayOfMatcher {
+  __type: typeof EXPECT_ARRAY_OF;
+  itemMatcher: unknown;
+}
+
+interface ArrayContainingMatcher {
+  __type: typeof EXPECT_ARRAY_CONTAINING;
+  items: unknown[];
+}
+
+export interface ExpectBodyOptions {
+  depth?: number;
+}
+
 export const expect = {
   any: EXPECT_ANY,
   string: EXPECT_STRING,
@@ -12,6 +29,14 @@ export const expect = {
   boolean: EXPECT_BOOLEAN,
   array: EXPECT_ARRAY,
   object: EXPECT_OBJECT,
+  arrayOf: (itemMatcher: unknown): ArrayOfMatcher => ({
+    __type: EXPECT_ARRAY_OF,
+    itemMatcher,
+  }),
+  arrayContaining: (items: unknown[]): ArrayContainingMatcher => ({
+    __type: EXPECT_ARRAY_CONTAINING,
+    items,
+  }),
 };
 
 export class KrepkoResponse {
@@ -40,37 +65,176 @@ export class KrepkoResponse {
     return this;
   }
 
-  expectBody(partial: Record<string, unknown>): this {
-    if (typeof this.body !== 'object' || this.body === null) {
-      throw new Error(
-        `Expected body to be an object, received ${typeof this.body}`
-      );
-    }
+  expectBody(partial: Record<string, unknown> | unknown[], options?: ExpectBodyOptions): this {
+    const maxDepth = options?.depth ?? Infinity;
+    const mismatch = this.matchPartial(this.body, partial, '', 0, maxDepth);
 
-    const body = this.body as Record<string, unknown>;
-
-    for (const [key, expectedValue] of Object.entries(partial)) {
-      const actualValue = body[key];
-
-      if (!this.matchValue(actualValue, expectedValue)) {
-        const expectedStr = typeof expectedValue === 'symbol'
-          ? expectedValue.description
-          : JSON.stringify(expectedValue);
-        const error = new Error(
-          `Body mismatch at "${key}": expected ${expectedStr}, received ${JSON.stringify(actualValue)}`
-        );
-        (error as any).key = key;
-        (error as any).expected = expectedValue;
-        (error as any).received = actualValue;
-        throw error;
-      }
+    if (mismatch) {
+      const error = new Error(mismatch.message);
+      (error as any).path = mismatch.path;
+      (error as any).expected = mismatch.expected;
+      (error as any).received = mismatch.received;
+      throw error;
     }
 
     return this;
   }
 
-  private matchValue(actual: unknown, expected: unknown): boolean {
-    // Handle matchers
+  private matchPartial(
+    actual: unknown,
+    expected: unknown,
+    path: string,
+    currentDepth: number,
+    maxDepth: number
+  ): { message: string; path: string; expected: unknown; received: unknown } | null {
+    // Depth limit reached - skip deeper validation
+    if (currentDepth > maxDepth) {
+      return null;
+    }
+
+    // Handle symbol matchers
+    if (typeof expected === 'symbol') {
+      const result = this.matchSymbolMatcher(actual, expected);
+      if (!result) {
+        return {
+          message: `Body mismatch at "${path || 'root'}": expected ${expected.description}, received ${this.formatValue(actual)}`,
+          path: path || 'root',
+          expected,
+          received: actual,
+        };
+      }
+      return null;
+    }
+
+    // Handle arrayOf matcher
+    if (this.isArrayOfMatcher(expected)) {
+      if (!Array.isArray(actual)) {
+        return {
+          message: `Body mismatch at "${path || 'root'}": expected array, received ${typeof actual}`,
+          path: path || 'root',
+          expected: 'array',
+          received: actual,
+        };
+      }
+      for (let i = 0; i < actual.length; i++) {
+        const itemPath = path ? `${path}[${i}]` : `[${i}]`;
+        const mismatch = this.matchPartial(actual[i], expected.itemMatcher, itemPath, currentDepth + 1, maxDepth);
+        if (mismatch) return mismatch;
+      }
+      return null;
+    }
+
+    // Handle arrayContaining matcher
+    if (this.isArrayContainingMatcher(expected)) {
+      if (!Array.isArray(actual)) {
+        return {
+          message: `Body mismatch at "${path || 'root'}": expected array, received ${typeof actual}`,
+          path: path || 'root',
+          expected: 'array',
+          received: actual,
+        };
+      }
+      for (let i = 0; i < expected.items.length; i++) {
+        const expectedItem = expected.items[i];
+        const found = actual.some((actualItem) =>
+          this.matchPartial(actualItem, expectedItem, '', currentDepth + 1, maxDepth) === null
+        );
+        if (!found) {
+          return {
+            message: `Body mismatch at "${path || 'root'}": array does not contain expected item at index ${i}`,
+            path: path || 'root',
+            expected: expectedItem,
+            received: actual,
+          };
+        }
+      }
+      return null;
+    }
+
+    // Handle array expected - validate each element against pattern
+    if (Array.isArray(expected)) {
+      if (!Array.isArray(actual)) {
+        return {
+          message: `Body mismatch at "${path || 'root'}": expected array, received ${typeof actual}`,
+          path: path || 'root',
+          expected: 'array',
+          received: actual,
+        };
+      }
+
+      // If expected array has elements, validate each actual element against expected patterns
+      for (let i = 0; i < expected.length; i++) {
+        if (i >= actual.length) {
+          return {
+            message: `Body mismatch at "${path || 'root'}": expected array with at least ${expected.length} elements, received ${actual.length}`,
+            path: path || 'root',
+            expected: expected.length,
+            received: actual.length,
+          };
+        }
+        const itemPath = path ? `${path}[${i}]` : `[${i}]`;
+        const mismatch = this.matchPartial(actual[i], expected[i], itemPath, currentDepth + 1, maxDepth);
+        if (mismatch) return mismatch;
+      }
+      return null;
+    }
+
+    // Handle object expected - partial matching
+    if (typeof expected === 'object' && expected !== null) {
+      if (typeof actual !== 'object' || actual === null) {
+        return {
+          message: `Body mismatch at "${path || 'root'}": expected object, received ${actual === null ? 'null' : typeof actual}`,
+          path: path || 'root',
+          expected: 'object',
+          received: actual,
+        };
+      }
+
+      if (Array.isArray(actual)) {
+        return {
+          message: `Body mismatch at "${path || 'root'}": expected object, received array`,
+          path: path || 'root',
+          expected: 'object',
+          received: actual,
+        };
+      }
+
+      const actualObj = actual as Record<string, unknown>;
+      const expectedObj = expected as Record<string, unknown>;
+
+      for (const [key, expectedValue] of Object.entries(expectedObj)) {
+        const actualValue = actualObj[key];
+        const keyPath = path ? `${path}.${key}` : key;
+
+        if (!(key in actualObj)) {
+          return {
+            message: `Body mismatch at "${keyPath}": key not found in actual object`,
+            path: keyPath,
+            expected: expectedValue,
+            received: undefined,
+          };
+        }
+
+        const mismatch = this.matchPartial(actualValue, expectedValue, keyPath, currentDepth + 1, maxDepth);
+        if (mismatch) return mismatch;
+      }
+      return null;
+    }
+
+    // Handle primitive values
+    if (actual !== expected) {
+      return {
+        message: `Body mismatch at "${path || 'root'}": expected ${this.formatValue(expected)}, received ${this.formatValue(actual)}`,
+        path: path || 'root',
+        expected,
+        received: actual,
+      };
+    }
+
+    return null;
+  }
+
+  private matchSymbolMatcher(actual: unknown, expected: symbol): boolean {
     if (expected === EXPECT_ANY) {
       return actual !== undefined;
     }
@@ -89,28 +253,34 @@ export class KrepkoResponse {
     if (expected === EXPECT_OBJECT) {
       return typeof actual === 'object' && actual !== null && !Array.isArray(actual);
     }
-
-    return this.deepEqual(actual, expected);
+    return false;
   }
 
-  private deepEqual(a: unknown, b: unknown): boolean {
-    if (a === b) return true;
-    if (typeof a !== typeof b) return false;
-    if (typeof a !== 'object' || a === null || b === null) return false;
+  private isArrayOfMatcher(value: unknown): value is ArrayOfMatcher {
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      '__type' in value &&
+      (value as any).__type === EXPECT_ARRAY_OF
+    );
+  }
 
-    const aObj = a as Record<string, unknown>;
-    const bObj = b as Record<string, unknown>;
+  private isArrayContainingMatcher(value: unknown): value is ArrayContainingMatcher {
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      '__type' in value &&
+      (value as any).__type === EXPECT_ARRAY_CONTAINING
+    );
+  }
 
-    const aKeys = Object.keys(aObj);
-    const bKeys = Object.keys(bObj);
-
-    if (aKeys.length !== bKeys.length) return false;
-
-    for (const key of aKeys) {
-      if (!bKeys.includes(key)) return false;
-      if (!this.deepEqual(aObj[key], bObj[key])) return false;
+  private formatValue(value: unknown): string {
+    if (typeof value === 'symbol') {
+      return value.description ?? 'symbol';
     }
-
-    return true;
+    if (value === undefined) {
+      return 'undefined';
+    }
+    return JSON.stringify(value);
   }
 }
