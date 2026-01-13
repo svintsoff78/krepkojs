@@ -1,7 +1,14 @@
 export { krepko, Krepko, getRegisteredFlows, clearFlows } from './core/krepko.js';
 export { Flow } from './core/flow.js';
 export { Context } from './core/context.js';
-export { KrepkoResponse, expect, type ExpectBodyOptions } from './core/response.js';
+export {
+  KrepkoResponse,
+  expect,
+  type ExpectBodyOptions,
+  type ExpectBodyInput,
+  type ArrayOfMatcher,
+  type ArrayContainingMatcher,
+} from './core/response.js';
 export { Runner } from './core/runner.js';
 export type {
   HttpMethod,

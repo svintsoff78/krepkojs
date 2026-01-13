@@ -8,15 +8,17 @@ const EXPECT_OBJECT = Symbol('expect.object');
 const EXPECT_ARRAY_OF = Symbol('expect.arrayOf');
 const EXPECT_ARRAY_CONTAINING = Symbol('expect.arrayContaining');
 
-interface ArrayOfMatcher {
-  __type: typeof EXPECT_ARRAY_OF;
+export interface ArrayOfMatcher {
+  __type: symbol;
   itemMatcher: unknown;
 }
 
-interface ArrayContainingMatcher {
-  __type: typeof EXPECT_ARRAY_CONTAINING;
+export interface ArrayContainingMatcher {
+  __type: symbol;
   items: unknown[];
 }
+
+export type ExpectBodyInput = Record<string, unknown> | unknown[] | ArrayOfMatcher | ArrayContainingMatcher;
 
 export interface ExpectBodyOptions {
   depth?: number;
@@ -65,7 +67,7 @@ export class KrepkoResponse {
     return this;
   }
 
-  expectBody(partial: Record<string, unknown> | unknown[], options?: ExpectBodyOptions): this {
+  expectBody(partial: ExpectBodyInput, options?: ExpectBodyOptions): this {
     const maxDepth = options?.depth ?? Infinity;
     const mismatch = this.matchPartial(this.body, partial, '', 0, maxDepth);
 
