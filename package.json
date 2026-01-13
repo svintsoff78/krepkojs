@@ -1,6 +1,6 @@
 {
   "name": "@svintsoff78/krepkojs",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "Contract-driven HTTP testing library for executable flows",
   "type": "module",
   "main": "./dist/index.js",
